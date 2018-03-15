@@ -62,8 +62,12 @@ def make_decisions():
 
 
 def initial():
-    write_data('record', '')
-    write_data('left', '')
+    config = configparser.ConfigParser()
+    if not config.read('members.ini', encoding='UTF-8'):
+        initial_write(config)
+    else:
+        write_data('record', '', config)
+        write_data('left', '', config)
 
 
 if __name__ == '__main__':
