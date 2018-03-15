@@ -1,17 +1,16 @@
 import itchat
 
+if itchat.check_login != 200:
+    itchat.auto_login(hotReload=True)
+
 
 def send_friends_msg(context, name):
-    if itchat.check_login != 200:
-        itchat.auto_login(hotReload=True)
     users = itchat.search_friends(name=name)
     username = users[0]['UserName']
     itchat.send(context, toUserName=username)
 
 
 def send_chatrooms_msg(context, name):
-    if itchat.check_login != 200:
-        itchat.auto_login(hotReload=True)
     itchat.get_chatrooms(update=True)
     iroom = itchat.search_chatrooms(name)
     roomname = ''

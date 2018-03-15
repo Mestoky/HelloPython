@@ -1,7 +1,8 @@
 .idea/
 *.ini
 *.pkl
-ini_write.py
+initialize.py
+test.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
