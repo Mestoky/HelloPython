@@ -18,9 +18,9 @@ def send_chatrooms_msg(context, name):
         if room['NickName'] == name:
             roomname = room['UserName']
             break
-    else:
-        print('Error: Chatroom Not Found.')
-        send_friends_msg('Error: Chatroom Not Found.')
+    if not roomname:
+        print('Error: Chatroom:%s Not Found.' % name)
+        send_friends_msg('Error: Chatroom:%s Not Found.' % name)
     itchat.send_msg(context, roomname)
 
 
