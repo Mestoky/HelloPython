@@ -1,6 +1,7 @@
 .idea/
 *.ini
 *.pkl
+*.txt
 initialize.py
 test.py
 
