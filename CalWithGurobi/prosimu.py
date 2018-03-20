@@ -1,7 +1,7 @@
 from gurobipy import *
 
 
-def prod_simulation(plants, pload, hload):
+def prod_simulation(plants, pload, hload, mats, pfctr):
     try:
         # Create a new model
         m = Model("prod_simulation")
@@ -29,24 +29,39 @@ def prod_simulation(plants, pload, hload):
         # 风电出力约束
         bigm = 10**4
         for plant, wpschedule in zip(wplants, wpschedules):
-            m.addConstrs((0 <= wpschedule[i] <= plant.maxwp[i] for i in range(len(pload))),
-                         name='%s wp-ctr' % plant.name)
+            m.addConstrs((wpschedule[i] <= plant.maxwp[i] for i in range(len(pload))),
+                         name='%s wp-u-cstr' % plant.name)
+            m.addConstrs((wpschedule[i] >= 0 for i in range(len(pload))),
+                         name='%s wp-d-cstr' % plant.name)
         # CHP出力约束
         for plant, pchpschedule, hchpschedule, isopen in zip(chpplants, pchpschedules, hchpschedules, isopens):
-            m.addConstrs((0 <= pchpschedule[i] <= isopen * bigm for i in range(len(pload))),
-                         name='%s e-chp-ctr1' % plant.name)
-            m.addConstrs((0 <= hchpschedule[i] <= isopen * bigm for i in range(len(pload))),
-                         name='%s h-chp-ctr1' % plant.name)
-            m.addConstrs((plant.pbound[0] - (1-isopen) * bigm <= pchpschedule[i] <= plant.pbound[1] + (1-isopen) * bigm
-                          for i in range(len(pload))), name='%s e-chp-ctr2' % plant.name)
-            m.addConstrs((plant.hbound[0] - (1-isopen) * bigm <= hchpschedule[i] <= plant.hbound[1] + (1-isopen) * bigm
-                          for i in range(len(pload))), name='%s h-chp-ctr2' % plant.name)
+            m.addConstrs((pchpschedule[i] <= isopen * bigm for i in range(len(pload))),
+                         name='%s e-chp-u-cstr1' % plant.name)
+            m.addConstrs((pchpschedule[i] >= 0 for i in range(len(pload))),
+                         name='%s e-chp-d-cstr1' % plant.name)
+            m.addConstrs((hchpschedule[i] <= isopen * bigm for i in range(len(pload))),
+                         name='%s h-chp-u-cstr1' % plant.name)
+            m.addConstrs((hchpschedule[i] >= 0 for i in range(len(pload))),
+                         name='%s h-chp-d-cstr1' % plant.name)
+            m.addConstrs((pchpschedule[i] <= plant.pbound[1] + (1-isopen) * bigm
+                          for i in range(len(pload))), name='%s e-chp-u-cstr2' % plant.name)
+            m.addConstrs((plant.pbound[0] - (1-isopen) * bigm <= pchpschedule[i]
+                          for i in range(len(pload))), name='%s e-chp-d-cstr2' % plant.name)
+            m.addConstrs((hchpschedule[i] <= plant.hbound[1] + (1-isopen) * bigm
+                          for i in range(len(pload))), name='%s h-chp-u-cstr2' % plant.name)
+            m.addConstrs((plant.hbound[0] - (1-isopen) * bigm <= hchpschedule[i]
+                          for i in range(len(pload))), name='%s h-chp-d-cstr2' % plant.name)
         # 电热供需约束
         m.update()
         p_intime = list(zip(*(wpschedules + pchpschedules)))
         h_intime = list(zip(*hchpschedules))
-        m.addConstrs((sum(p_intime[i]) == pload[i] for i in range(len(pload))), name='pload-ctr')
-        m.addConstrs((sum(h_intime[i]) == hload[i] for i in range(len(hload))), name='hload-ctr')
+        m.addConstrs((sum(p_intime[i]) == pload[i] for i in range(len(pload))), name='pload-cstr')
+        m.addConstrs((sum(h_intime[i]) == hload[i] for i in range(len(hload))), name='hload-cstr')
+        # 潮流约束
+        m.addConstrs((quicksum(map(lambda x, y: x*y, mats[j], p_intime[i])) <= pfctr[j]
+                      for j in range(len(pfctr)) for i in range(len(pload))), name='pf-u-cstr')
+        m.addConstrs((quicksum(map(lambda x, y: x*y, mats[j], p_intime[i])) >= -pfctr[j]
+                      for j in range(len(pfctr)) for i in range(len(pload))), name='pf-d-cstr')
         m.update()
         # Set objective
         m.setObjective(cal_cost(chpplants, pchpschedules, hchpschedules), GRB.MINIMIZE)
@@ -54,8 +69,9 @@ def prod_simulation(plants, pload, hload):
         for v in m.getVars():
             print(v.varName, v.x)
         print('Obj:', m.objVal)
+        for c in m.getConstrs():
+            print(c.ConstrName, c.Slack)
     except GurobiError:
-        print(GurobiError)
         print('Error reported')
 
 
@@ -73,9 +89,7 @@ class Plant:
 def cal_cost(chpplants, pchpschedules, hchpschedules):
     result = 0
     for plant, pchpschedule, hchpschedule in zip(chpplants, pchpschedules, hchpschedules):
-        for p, h in zip(pchpschedule, hchpschedule):
-            result = result + plant.costfun(p, h)
-            # result = result + quicksum(map(plant.costfun, pchpschedule, hchpschedule))
+        result = result + quicksum(map(plant.costfun, pchpschedule, hchpschedule))
     return result
 
 
