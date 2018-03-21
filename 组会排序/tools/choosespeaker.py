@@ -1,74 +1,59 @@
-'''每周运行一次，选出本周speaker，一轮之中不出现重复speaker；对于两轮之间，同一个speaker两次之间至少隔两周'''
-
+import configparser
 import random
 import time
-import configparser
 
 
-def initial_write(config):
-    config.add_section('all')
-    config.set('all', 'candidates', 'A,B,C,D,E,F,G,H,I,J,K,L,M,N')
-    config.add_section('left')
-    config.set('left', 'candidates', '')
-    config.add_section('record')
-    config.set('record', 'candidates', '')
-    with open('members.ini', 'w', encoding='UTF-8') as configfile:
-        config.write(configfile)
+class Data:
+    """公用数据"""
+    config = configparser.ConfigParser()
+    filename = ''
+    all = []
+    left = []
+    rec = []
 
 
-def write_data(name, info, config):
-    config.set(name, 'candidates', ','.join(info))
-    with open('members.ini', 'w', encoding='UTF-8') as configfile:
-        config.write(configfile)
-
-
-def read_data(name, config):
-    content = config.get(name, 'candidates')
-    if content:
-        return content.split(',')
+def read_config(filename, default=None):
+    """生成config并读取/初始化ini文件"""
+    Data.filename = filename
+    if not default:
+        default = ['A', 'B', 'C', 'D', 'E', 'F']
+    if Data.config.read(Data.filename, encoding='UTF-8'):
+        Data.all = Data.config.get('all', 'candidates').split(',')
+        Data.left = Data.config.get('left', 'candidates').split(',')
+        Data.rec = Data.config.get('record', 'candidates').split(',')
     else:
-        return []
+        Data.all = default[:]
+        Data.left = default[:]
+        Data.config.add_section('all')
+        Data.config.add_section('left')
+        Data.config.add_section('record')
+        Data.config.set('all', 'candidates', ','.join(Data.all))
 
 
-def choose_speaker(li, rec):
-    speaker = random.choice(li)
-    while speaker in rec:
-        speaker = random.choice(li)
+def choose_speaker(protect=2):
+    """从演讲候选人中选出演讲人"""
+    assert Data.left and Data.all, '未进行初始化！'
+    random.seed(time.time())
+    speaker = random.choice(list(set(Data.left) - set(Data.rec)))
+    Data.left.remove(speaker)
+    Data.rec.append(speaker)
+    if len(Data.left) == 0:
+        Data.left.extend(Data.all)
+    if len(Data.rec) > protect:
+        Data.rec.pop(0)
     return speaker
 
 
-def make_decisions():
-    random.seed(time.time())
-    config = configparser.ConfigParser()
-    if not config.read('members.ini', encoding='UTF-8'):
-        initial_write(config)
-    all_can = read_data('all', config)
-    if not read_data('left', config):
-        left_can = all_can
-    else:
-        left_can = read_data('left', config)
-    rec_can = read_data('record', config)
-    speaker = choose_speaker(left_can, rec_can)
-    print('下周组会轮到你：%s' % speaker)
-    rec_can.append(speaker)
-    if len(rec_can) > 2:
-        rec_can.pop(0)
-    write_data('record', rec_can, config)
-    left_can.remove(speaker)
-    if not left_can:
-        left_can = all_can
-    write_data('left', left_can, config)
-    return '下周组会轮到你：%s@%s' % (speaker, speaker)
-
-
-def initial():
-    config = configparser.ConfigParser()
-    if not config.read('members.ini', encoding='UTF-8'):
-        initial_write(config)
-    else:
-        write_data('record', '', config)
-        write_data('left', '', config)
+def save_data():
+    """将候选人列表写入文件"""
+    assert Data.filename, '未设置文件名！'
+    Data.config.set('left', 'candidates', ','.join(Data.left))
+    Data.config.set('record', 'candidates', ','.join(Data.rec))
+    with open(Data.filename, 'w', encoding='UTF-8') as file:
+        Data.config.write(file)
 
 
 if __name__ == '__main__':
-    make_decisions()
+    read_config('members.ini')
+    print(choose_speaker())
+    save_data()
