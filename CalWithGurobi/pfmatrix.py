@@ -42,14 +42,10 @@ class PfMatrix:
     def get_amat(self):
         a = list()
         for i in range(self.n - 1):
-            a.append([0] * self.n)
-            for j in range(i + 1, self.n - 1):
+            for j in range(i + 1, self.n):
+                a.append([0] * self.n)
                 a[-1][i] = 1
                 a[-1][j] = -1
-                a.append([0] * self.n)
-            else:
-                a[-1][i] = 1
-                a[-1][self.n - 1] = -1
         return mat(a)
 
     # 线路导纳矩阵

@@ -45,11 +45,11 @@ def prod_simulation(plants, pload, hload, mats, pfctr):
                          name='%s:h-chp-d-cstr1' % plant.name)
             m.addConstrs((pchpschedule[i] <= plant.pbound[1] + (1-isopen) * bigm
                           for i in range(len(pload))), name='%s:e-chp-u-cstr2' % plant.name)
-            m.addConstrs((plant.pbound[0] - (1-isopen) * bigm <= pchpschedule[i]
+            m.addConstrs((pchpschedule[i] >= plant.pbound[0] - (1-isopen) * bigm
                           for i in range(len(pload))), name='%s:e-chp-d-cstr2' % plant.name)
             m.addConstrs((hchpschedule[i] <= plant.hbound[1] + (1-isopen) * bigm
                           for i in range(len(pload))), name='%s:h-chp-u-cstr2' % plant.name)
-            m.addConstrs((plant.hbound[0] - (1-isopen) * bigm <= hchpschedule[i]
+            m.addConstrs((hchpschedule[i] >= plant.hbound[0] - (1-isopen) * bigm
                           for i in range(len(pload))), name='%s:h-chp-d-cstr2' % plant.name)
         # 电热供需约束
         m.update()
