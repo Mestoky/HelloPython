@@ -22,7 +22,7 @@ class PfMatrix:
                 if column < row:
                     bn[row, column] = bn[column, row]
                 elif column > row:
-                    bn[row, column] = tempbs.pop(0)
+                    bn[row, column] = -tempbs.pop(0)
             else:
                 bn[row, row] = -sum(bn.tolist()[row])
         return mat(bn)
