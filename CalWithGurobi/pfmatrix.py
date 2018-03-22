@@ -1,4 +1,4 @@
-from numpy import *
+import numpy as np
 
 
 class PfMatrix:
@@ -15,7 +15,7 @@ class PfMatrix:
 
     # 全节点导纳矩阵
     def get_bnmat(self):
-        bn = mat(zeros([self.n, self.n]))
+        bn = np.zeros([self.n, self.n])
         tempbs = self.bs
         for row in range(self.n):
             for column in range(self.n):
@@ -25,18 +25,18 @@ class PfMatrix:
                     bn[row, column] = -tempbs.pop(0)
             else:
                 bn[row, row] = -sum(bn.tolist()[row])
-        return mat(bn)
+        return np.mat(bn)
 
     # 导纳矩阵（最后一个节点选为平衡节点，theta=0）
     def get_bmat(self):
         bn = self.get_bnmat()
-        b = bn[arange(self.n - 1)][:, arange(self.n - 1)]
+        b = bn[np.arange(self.n - 1)][:, np.arange(self.n - 1)]
         return b
 
     # 导纳矩阵逆矩阵，添加最后一行0
     def get_invbmatn(self):
         b = self.get_bmat()
-        return vstack((b.I, zeros([1, self.n - 1])))
+        return np.vstack((b.I, np.zeros([1, self.n - 1])))
 
     # 节点关联矩阵（只和节点个数有关）
     def get_amat(self):
@@ -46,11 +46,11 @@ class PfMatrix:
                 a.append([0] * self.n)
                 a[-1][i] = 1
                 a[-1][j] = -1
-        return mat(a)
+        return np.mat(a)
 
     # 线路导纳矩阵
     def get_blmat(self):
-        return mat(diag(self.bs))
+        return np.diag(self.bs)
 
     # 三个矩阵乘积
     def get_mats(self):

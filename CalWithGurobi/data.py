@@ -17,7 +17,7 @@ pfcstr = [300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 300, 
 
 plants = list()
 plants.append(Plant(ptype=1, pbound=(180, 280), hbound=(0, 200),
-                    costfun=(lambda p, h: 210), name='CHP_HS1'))
+                    costfun=(lambda p, h: 200), name='CHP_HS1'))
 plants.append(Plant(ptype=1, pbound=(120, 280), hbound=(0, 200),
                     costfun=(lambda p, h: 200), name='CHP_SF1'))
 plants.append(Plant(ptype=1, pbound=(120, 280), hbound=(0, 200),

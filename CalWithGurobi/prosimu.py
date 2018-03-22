@@ -1,4 +1,5 @@
 from gurobipy import *
+import numpy as np
 
 
 def prod_simulation(plants, pload, hload, mats, pfctr):
@@ -65,7 +66,7 @@ def prod_simulation(plants, pload, hload, mats, pfctr):
         m.update()
         # Set objective
         m.setObjective(cal_cost(chpplants, pchpschedules, hchpschedules), GRB.MINIMIZE)
-        print(cal_cost(chpplants, pchpschedules, hchpschedules))
+        # print(cal_cost(chpplants, pchpschedules, hchpschedules))
         m.optimize()
         print('决策变量：\n' + '-' * 100)
         for v in m.getVars():
@@ -92,9 +93,18 @@ class Plant:
 
 def cal_cost(chpplants, pchpschedules, hchpschedules):
     result = 0
+    p = list()
+    h = list()
     for plant, pchpschedule, hchpschedule in zip(chpplants, pchpschedules, hchpschedules):
         result += quicksum((pchpschedule[i] + hchpschedule[i]*0.17) * plant.costfun(pchpschedule[i], hchpschedule[i])
                            for i in range(len(pchpschedule)))
+        p.append((np.mat(pchpschedule) - np.ones([1, len(pchpschedule)]) * plant.pbound[0]) / plant.pbound[1])
+        h.append(np.mat(hchpschedule) / plant.hbound[1])
+    p_intime = list(zip(*p))
+    h_intime = list(zip(*h))
+    for pt, ht in zip(p_intime, h_intime):
+        result += np.var(pt) * 0.0001
+        result += np.var(ht) * 0.0001
     return result
 
 
