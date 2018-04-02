@@ -1,8 +1,9 @@
 from gurobipy import *
 import numpy as np
+import matplotlib.pyplot as plt
 
 
-def prod_simulation(plants, pload, hload, mats, pfctr):
+def prod_simulation(plants, pload, hload, mats, pfctr, plot_result=None):
     try:
         # Create a new model
         m = Model("prod_simulation")
@@ -52,9 +53,11 @@ def prod_simulation(plants, pload, hload, mats, pfctr):
                           for i in range(len(pload))), name='%s:h-chp-u-cstr2' % plant.name)
             m.addConstrs((hchpschedule[i] >= plant.hbound[0] - (1-isopen) * bigm
                           for i in range(len(pload))), name='%s:h-chp-d-cstr2' % plant.name)
+            m.addConstrs((hchpschedule[i] <= pchpschedule[i] * 1.7 for i in range(len(pload))),
+                         name='%s:eh-chp-cstr' % plant.name)
         # 电热供需约束
         m.update()
-        p_intime = list(zip(*(wpschedules + pchpschedules)))
+        p_intime = list(zip(*(pchpschedules + wpschedules)))
         h_intime = list(zip(*hchpschedules))
         m.addConstrs((sum(p_intime[i]) == pload[i] for i in range(len(pload))), name='pload-cstr')
         m.addConstrs((sum(h_intime[i]) == hload[i] for i in range(len(hload))), name='hload-cstr')
@@ -65,9 +68,9 @@ def prod_simulation(plants, pload, hload, mats, pfctr):
                       for j in range(len(pfctr)) for i in range(len(pload))), name='pf-d-cstr')
         m.update()
         # Set objective
-        m.setObjective(cal_cost(chpplants, pchpschedules, hchpschedules), GRB.MINIMIZE)
-        # print(cal_cost(chpplants, pchpschedules, hchpschedules))
+        m.setObjective(cal_cost(chpplants, pchpschedules, hchpschedules, isopens, wplants, wpschedules), GRB.MINIMIZE)
         m.optimize()
+        # 输出结果
         print('决策变量：\n' + '-' * 100)
         for v in m.getVars():
             print('%30s %0.2f' % (v.varName, v.x))
@@ -76,6 +79,38 @@ def prod_simulation(plants, pload, hload, mats, pfctr):
             print('%30s %0.2f' % (c.ConstrName, c.Slack))
         print('最优结果：\n' + '-' * 100)
         print('%30s %0.2f' % ('Optimal Obj:', m.objVal))
+        # 画图
+        if plot_result:
+            plt.rcParams['font.sans-serif'] = ['SimHei']
+            # 负荷
+            plt.figure()
+            plt.plot(list(range(1, len(pload) + 1)), pload, 'cx-', label=u"电负荷曲线")
+            plt.plot(list(range(1, len(hload) + 1)), hload, 'mo-', label=u"热负荷曲线")
+            plt.ylabel(u"负荷曲线(MW)")
+            plt.legend()
+            plt.title(u"负荷曲线(MW)")
+            plt.show()
+            # 机组
+            for plant, wpschedule in zip(wplants, wpschedules):
+                plt.figure()
+                wp = list(wpschedule[i].x for i in range(len(wpschedule)))
+                plt.plot(list(range(1, len(wp) + 1)), wp, 'cx-', label=u"出力曲线")
+                plt.plot(list(range(1, len(wp) + 1)), plant.maxwp, 'r--', label=u"最大出力曲线")
+                plt.ylabel(u"出力曲线(MW)")
+                plt.legend()
+                plt.title(u"%s出力曲线(MW)" % plant.name)
+                plt.show()
+            for plant, pchpschedule, hchpschedule in zip(chpplants, pchpschedules, hchpschedules):
+                plt.figure()
+                pchp = list(pchpschedule[i].x for i in range(len(pchpschedule)))
+                hchp = list(hchpschedule[i].x for i in range(len(hchpschedule)))
+                plt.plot(list(range(1, len(pchp) + 1)), pchp, 'cx-', label=u"电出力曲线")
+                plt.plot(list(range(1, len(pchp) + 1)), [plant.pbound[0]] * len(pchpschedule), 'r--', label=u"电出力下限")
+                plt.plot(list(range(1, len(pchp) + 1)), hchp, 'mo-', label=u"热出力曲线")
+                plt.ylabel(u"出力曲线(MW)")
+                plt.legend()
+                plt.title(u"%s出力曲线(MW)" % plant.name)
+                plt.show()
     except GurobiError:
         print('Error reported')
 
@@ -91,20 +126,29 @@ class Plant:
         self.reformtype = reformtype
 
 
-def cal_cost(chpplants, pchpschedules, hchpschedules):
+def cal_cost(chpplants, pchpschedules, hchpschedules, isopens, wplants, wpschedules):
     result = 0
+    # CHP
     p = list()
     h = list()
-    for plant, pchpschedule, hchpschedule in zip(chpplants, pchpschedules, hchpschedules):
+    for plant, pchpschedule, hchpschedule, isopen in zip(chpplants, pchpschedules, hchpschedules, isopens):
         result += quicksum((pchpschedule[i] + hchpschedule[i]*0.17) * plant.costfun(pchpschedule[i], hchpschedule[i])
                            for i in range(len(pchpschedule)))
-        p.append((np.mat(pchpschedule) - np.ones([1, len(pchpschedule)]) * plant.pbound[0]) / plant.pbound[1])
+        result += isopen * plant.costfun(plant.pbound[1], plant.hbound[1]) * len(pchpschedule) * 0.1
+        p.append(np.mat(pchpschedule) / plant.pbound[1])
         h.append(np.mat(hchpschedule) / plant.hbound[1])
     p_intime = list(zip(*p))
     h_intime = list(zip(*h))
     for pt, ht in zip(p_intime, h_intime):
-        result += np.var(pt) * 0.0001
-        result += np.var(ht) * 0.0001
+        result += np.var(pt) * 0.001
+        result += np.var(ht) * 0.001
+    # 风电
+    wp = list()
+    for wplant, wpschedule in zip(wplants, wpschedules):
+        wp.append(list(wpschedule[i] / wplant.maxwp[i] for i in range(len(wplant.maxwp))))
+    wp_intime = list(zip(*wp))
+    for wpt in wp_intime:
+        result += np.var(wpt) * 0.001
     return result
 
 
