@@ -46,19 +46,25 @@ class ProSimu:
         self.constraints += [self.TTG == self.hload]
 
     # Solve the Model
-    def solve(self):
+    def solve(self, flag=1):
+        self.build()
         try:
             if self.sense == 'minimize':
                 self.prob = cvx.Problem(cvx.Minimize(self.totalcost), self.constraints)
             else:
                 self.prob = cvx.Problem(cvx.Maximize(self.totalcost), self.constraints)
             self.prob.solve()  # Returns the optimal value.
-            print("Status:", self.prob.status)
-            print("Optimal value:", self.prob.value)
+            if flag:
+                print("Status:", self.prob.status)
+                print("Optimal value:", self.prob.value)
             if self.plot:
                 self.plot_result()
         except ValueError as error:
             print(error)
+
+    def getoptvalue(self):
+        self.solve(flag=0)
+        return self.prob.value
 
     # Wind Power Unit
     def wind_unit(self, unit):
