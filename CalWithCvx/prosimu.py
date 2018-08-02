@@ -46,19 +46,25 @@ class ProSimu:
         self.constraints += [self.TTG == self.hload]
 
     # Solve the Model
-    def solve(self):
+    def solve(self, flag=1):
+        self.build()
         try:
             if self.sense == 'minimize':
                 self.prob = cvx.Problem(cvx.Minimize(self.totalcost), self.constraints)
             else:
                 self.prob = cvx.Problem(cvx.Maximize(self.totalcost), self.constraints)
             self.prob.solve()  # Returns the optimal value.
-            print("Status:", self.prob.status)
-            print("Optimal value:", self.prob.value)
+            if flag:
+                print("Status:", self.prob.status)
+                print("Optimal value:", self.prob.value)
             if self.plot:
                 self.plot_result()
         except ValueError as error:
             print(error)
+
+    def getoptvalue(self):
+        self.solve(flag=0)
+        return self.prob.value if self.prob.status == 'optimal' else 10.0**4*sum(self.hload+self.pload)
 
     # Wind Power Unit
     def wind_unit(self, unit):
@@ -66,7 +72,7 @@ class ProSimu:
         unit.pschedule = cvx.Variable(self.T)
         self.TEG += unit.pschedule
         self.constraints += [unit.pschedule >= 0,
-                             unit.pschedule <= np.array(unit.maxwp)]
+                             unit.pschedule <= np.array([unit.maxwp]).T]
 
     # Pure Condensing Unit
     def pc_unit(self, unit):
@@ -176,7 +182,7 @@ class ProSimu:
         self.TTG += unit.hschedule
         self.totalcost += unit.cost
         self.constraints += [unit.p1 >= unit.mmain * 0.8, unit.p1 <= unit.mmain]
-        self.constraints += [unit.mmain == unit.p2 + unit.h2 / 6]
+        self.constraints += [unit.mmain*1.15 - unit.p1*0.15 == unit.p2 + unit.h2 / 6]
         self.constraints += [unit.p2 >= unit.p1 * 0.8]
         self.constraints += [unit.p2 == unit.p3 / 0.8 + unit.h1 / 4.66]
         self.constraints += [unit.p3 / 0.8 >= unit.mmain * 0.15]
@@ -235,6 +241,7 @@ class ProSimu:
         plt.title(u"负荷曲线(MW)")
         plt.show()
         # 机组
+        wp_abandon = 0
         for unit in self.wpunits:
             plt.figure()
             plt.plot(list(range(1, self.T + 1)), unit.pschedule.value, 'cx-', label=u"出力曲线")
@@ -243,6 +250,8 @@ class ProSimu:
             plt.legend()
             plt.title(u"%s出力曲线(MW)" % unit.name)
             plt.show()
+            wp_abandon += sum(np.array([unit.maxwp]).T-np.array(unit.pschedule.value))
+        print('弃风量(MWh): %d' % wp_abandon)
         for unit in self.pcunits:
             plt.figure()
             plt.plot(list(range(1, self.T + 1)), unit.pschedule.value, 'cx-', label=u"电出力曲线")

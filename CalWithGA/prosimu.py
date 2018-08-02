@@ -64,7 +64,7 @@ class ProSimu:
 
     def getoptvalue(self):
         self.solve(flag=0)
-        return self.prob.value
+        return self.prob.value if self.prob.status == 'optimal' else 10.0**4*sum(self.hload+self.pload)
 
     # Wind Power Unit
     def wind_unit(self, unit):

@@ -4,11 +4,14 @@ from gaft.components import Population
 from gaft.operators import TournamentSelection
 from gaft.operators import UniformCrossover
 from gaft.operators import FlipBitMutation
+from gaft.analysis.fitness_store import FitnessStore
+from gaft.analysis.console_output import ConsoleOutput
 from prosimu import *
+import numpy as np
 
 
 # Determine the reform scheme with GA
-def doga(units, ploads, hload, size=50, ng=50, pc=0.8, pe=0.5, pm=0.1):
+def doga(units, ploads, hload, size=50, ng=5, pc=0.8, pe=0.5, pm=0.1):
     # 计算不同典型日下，最小运行成本均值
     def calcost(indv):
         # 输入改造方案
@@ -45,12 +48,14 @@ def doga(units, ploads, hload, size=50, ng=50, pc=0.8, pe=0.5, pm=0.1):
     selection = TournamentSelection()
     crossover = UniformCrossover(pc=pc, pe=pe)
     mutation = FlipBitMutation(pm=pm)
-    engine = GAEngine(population=population, selection=selection, crossover=crossover, mutation=mutation)
+    engine = GAEngine(population=population, selection=selection, crossover=crossover, mutation=mutation,
+                      analysis=[ConsoleOutput, FitnessStore])
 
     @engine.fitness_register
     @engine.minimize
     def fitness(indv):
-        return calcost(indv.solution)
+        # print(type(float(calcost(indv.solution))))
+        return float(calcost(indv.solution))
 
     engine.run(ng=ng)
 

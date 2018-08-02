@@ -2,6 +2,8 @@
 *.ini
 *.pkl
 *.txt
+*.log
+best_fit.py
 initialize.py
 test.py
 
