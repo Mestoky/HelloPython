@@ -16,122 +16,107 @@ BATCH = 64
 def inference(net):
     with slim.arg_scope([slim.fully_connected],
                         activation_fn=tf.nn.crelu,
-                        weights_initializer=tf.truncated_normal_initializer(0.0, 0.01),
+                        weights_initializer=slim.xavier_initializer(),  # 你尝试一下这个初始化器，网上推荐的
                         weights_regularizer=slim.l2_regularizer(0.0005)):
-        net = slim.stack(net, slim.fully_connected, [32, 128, 32, 8], scope='fc1')
-        net = slim.fully_connected(net, 1, activation_fn=None, scope='fc3')
+        net = slim.stack(net, slim.fully_connected, [32, 128, 32, 8], scope='fc')
+        net = slim.fully_connected(net, 1, activation_fn=None, scope='fc/fc_5')
     return net
 
 
 def get_data():
     os.chdir(work_dir)
     dataset = []
-    for parent, dirnames, filenames in os.walk(work_dir, followlinks=True):
-        for filename in filenames:
-            file_path = os.path.join(parent)
-            os.chdir(file_path)
-            wb = xlrd.open_workbook(filename=filename)
+    for parent, _, filenames in os.walk(work_dir, followlinks=True):
+        for filename in filenames:  # 如果你的数据可放在同一目录下的话，可以考虑使用for filename in os.listdir(...)
+            wb = xlrd.open_workbook(filename=os.path.join(parent, filename))
             ws = wb.sheet_by_name('1')
-            dataset += [[ws.cell(r, c).value for c in array] for r in range(2, ws.nrows, 3)]
+            dataset += [[ws.cell(r, c).value for c in array] for r in range(2, ws.nrows, 3)]  # 我觉得xlrd应该会有批量读取的方法吧
     data = np.array(dataset)
-    y = (np.multiply((data[:, 7] - data[:, 6]), data[:, 5]) * (4200 * 1000 / 3600) / 1000000)
+    y = (data[:, 7] - data[:, 6]) * data[:, 5] * (4200 * 1000 / 3600) / 1000000  # 我不确定这样改是对的，你需要确认一下
     data = np.c_[dataset, y]
     data = np.delete(data, 7, axis=1)
     return data
 
 
 def normal(m):
-    col_max = m.max(axis=0)
-    col_min = m.min(axis=0)
-    return np.nan_to_num((m-col_min)/(col_max - col_min))
+    m_no_nan = np.nan_to_num(m)  # 这一句最好放在这里，避免原始数据里存在nan导致col_max和col_min出nan
+    col_max, col_min = m_no_nan.max(axis=0), m_no_nan.min(axis=0)
+    return (m_no_nan - col_min) / (col_max - col_min)
 
 
 def start_training(datas):
-    if not tf.gfile.Exists(train_log_dir):
-        tf.gfile.MakeDirs(train_log_dir)
+    tf.gfile.MakeDirs(train_log_dir)  # tf.gfile.MakeDirs会自己检测文件夹是否已存在
 
-    with tf.Graph().as_default():
-        # Set up the data loading:
-        feature = tf.placeholder(dtype=tf.float32, shape=[None, 16])
-        heat = tf.placeholder(dtype=tf.float32, shape=[None, 1])
+    # 对于绝大多数问题，建议还是把图建在原生default graph上，而不是在新建的tf.Graph上，目的是方便调试
+    # 所以这里去除了with tf.Graph().as_default():
+    # Set up the data loading:
+    feature = tf.placeholder(dtype=tf.float32, shape=[None, 16])
+    heat = tf.placeholder(dtype=tf.float32, shape=[None])  # 我理解你的目标应该是1维列表而不是2维
 
-        # Define the model:
-        predictions = inference(feature)
+    # Define the model:
+    predictions = inference(feature)
 
-        # Specify the loss function:
-        absloss = tf.reduce_mean(tf.abs(heat-predictions))
-        sqloss = tf.reduce_mean(tf.square(heat - predictions))
-        slim.losses.add_loss(absloss)
+    # Specify the loss function:
+    abs_loss = tf.losses.absolute_difference(heat, predictions)  # 常见loss函数建议使用tf.losses
+    sq_loss = tf.losses.mean_squared_error(heat, predictions)
+    total_loss = tf.losses.get_total_loss()  # 前两句会自动把loss加入到tf.GraphKeys.LOSSES，然后使用该句即可获取总loss
 
-        total_loss = slim.losses.get_total_loss()  # tf.losses.get_total_loss()  #
+    # Specify the optimization scheme:
+    global_step = tf.train.get_or_create_global_step()  # 建议使用tf.train.get_or_create_global_step建立global step
 
-        # Specify the optimization scheme:
-        global_step = tf.Variable(0, trainable=False)
-        learning_rate = tf.train.exponential_decay(0.07, global_step, 100, 0.99)
-        ema = tf.train.ExponentialMovingAverage(0.99, global_step)
-        average_op = ema.apply(tf.trainable_variables())
-        train_step = tf.train.AdamOptimizer(learning_rate=learning_rate) \
-            .minimize(total_loss, global_step=global_step)
-        train_op = tf.group(train_step, average_op)
+    ema = tf.train.ExponentialMovingAverage(0.99, num_updates=global_step)
+    average_op = ema.apply(tf.trainable_variables())
+    train_op = tf.train.AdamOptimizer().minimize(total_loss, global_step=global_step)  # Adam优化器基本不需要自设定学习率
+    with tf.control_dependencies([train_op, average_op]):
+        train_op_with_total_loss = tf.identity(total_loss)  # 建议使用这种方式连接train op，方便后续训练过程中观察损失
 
-        # initialize var in graph`
-        sess = tf.Session()
-        init_op = tf.group(tf.global_variables_initializer(),
-                           tf.local_variables_initializer())  # the local var is for update_op
-        sess.run(init_op)
+    # 变量存取器
+    saver = tf.train.Saver()  # Saver的实例化应该放在训练循环外，因为每次实例化过程都会在计算图中增加新的Saver节点
+    restorer = tf.train.Saver(ema.variables_to_restore())
 
-        # train and test data
-        train_indices = np.random.choice(datas.shape[0], round(datas.shape[0] * 0.9), replace=False)
-        test_indices = np.array(list(set(range(datas.shape[0])) - set(train_indices)))
-        data = datas[train_indices, :]
-        datat = datas[test_indices, :]
+    # initialize var in graph`
+    sess = tf.Session()
+    sess.run([tf.global_variables_initializer(), tf.local_variables_initializer()])  # 全局和局部变量用这一句初始化就可以了
 
-        # Main Loop
-        restart = 0
-        num = data.shape[0]
-        shuffled_data = 0.0
-        start = 0
-        end = BATCH
+    # train and test data  # 这一段事实上不应该放在主函数里，而应该放在数据准备部分的函数里
+    data_size = datas.shape[0]
+    random_order = np.random.permutation(data_size)
+    split_index = int(data_size * 0.9)
+    data, datat = datas[random_order[:split_index]], datas[random_order[split_index:]]  # 更pythonic随机数据抽取
+    num = data.shape[0]
 
-        for step in range(1, STEPS+1):
-            if step == 1 or restart:
-                # print('Step:%d: Start Again!!!' % sess.run(global_step))
-                restart = 0
-                start = 0
-                end = BATCH
-                permutation = np.random.permutation(num)
-                shuffled_data = data[permutation, :]
-                # print(shuffled_data[start:end, 0].reshape((end-start, 1)).shape)
-            _, loss_, mean_absolute_loss_ = sess.run([train_op, sqloss, absloss], feed_dict={
-                feature: shuffled_data[start:end, 0:-1],
-                heat: shuffled_data[start:end, -1].reshape((end-start, 1))
-            })
-            start += BATCH
-            end += BATCH
-            if end >= num:
-                restart = 1
-                end = num
-            if step % 1000 == 0:
-                # Apply the Moving Average Variables
-                saver = tf.train.Saver()
-                saver.save(sess, train_log_dir + '\model.ckpt')
-                saver = tf.train.Saver(ema.variables_to_restore())
-                saver.restore(sess, train_log_dir + '\model.ckpt')
-                # Test the model
-                loss_t, mean_absolute_loss_t = sess.run([sqloss, absloss], feed_dict={
-                    feature: datat[:, 0:-1],
-                    heat: datat[:, -1].reshape((datat.shape[0], 1))
-                })
-                print('STEP:%d'
-                      '\nTrain:   SQLOSS:%.6f, Mean_absolute_loss:%.6f'
-                      '\nTest:   SQLOSS:%.6f, Mean_absolute_loss:%.6f'
-                      % (step, loss_, mean_absolute_loss_, loss_t, mean_absolute_loss_t))
-        sess.close()
+    # Main Loop
+    start = 0
+    for step in range(1, STEPS+1):
+        # 主训练部分
+        total_loss_, sq_loss_, abs_loss_ = \
+            sess.run([train_op_with_total_loss, sq_loss, abs_loss],  # ↓numpy会自动处理超过范围的索引（只返回有效索引内的数据）
+                     feed_dict={feature: data[start:start+BATCH, :-1], heat: data[start:start+BATCH, -1]})
+        start += BATCH
+        if start >= num:
+            data = data[np.random.permutation(num)]
+            start = 0
+
+        # 验证部分
+        if step % 1000 == 0:
+            # Apply the Moving Average Variables
+            saver.save(sess, train_log_dir + '\model.ckpt')
+            restorer.restore(sess, train_log_dir + '\model.ckpt')
+            # Test the model
+            loss_t, abs_loss_t = \
+                sess.run([sq_loss, abs_loss], feed_dict={feature: datat[:, :-1], heat: datat[:, -1]})
+            print('STEP:%d'
+                  '\nTrain:   SQLOSS:%.6f, Mean_absolute_loss:%.6f'
+                  '\nTest:   SQLOSS:%.6f, Mean_absolute_loss:%.6f'
+                  % (step, sq_loss_, abs_loss_, loss_t, abs_loss_t))  # 可以顺便把total_loss_也输出，查看总损失
+            # 现在这样验证就要求一次性把datat全部喂入，如果未来数据量过大不能一次性喂入，
+            # 之前应考虑使用tf.metrics.mean_squared_error、tf.metrics.mean_absolute_error这样的评判函数，
+            # 然后就可以把datat分多批次喂入，最后统计累计平均误差
+
+    sess.close()
 
 
 if __name__ == '__main__':
     data_ = get_data()
-    data_[:, 0:-1] = normal(data_[:, 0:-1])
+    data_[:, :-1] = normal(data_[:, :-1])
     start_training(data_)
-
-
