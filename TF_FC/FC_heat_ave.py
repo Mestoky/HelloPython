@@ -59,7 +59,7 @@ def start_training(datas):
     # Specify the loss function:
     abs_loss = tf.losses.absolute_difference(heat, predictions)  # 常见loss函数建议使用tf.losses
     sq_loss = tf.losses.mean_squared_error(heat, predictions)
-    total_loss = tf.losses.get_total_loss()  # 前两句会自动把loss加入到tf.GraphKeys.LOSSES，然后使用该句即可获取总loss
+    total_loss = abs_loss  # 只将abs loss作为损失函数
 
     # Specify the optimization scheme:
     global_step = tf.train.get_or_create_global_step()  # 建议使用tf.train.get_or_create_global_step建立global step
@@ -108,7 +108,7 @@ def start_training(datas):
             print('STEP:%d'
                   '\nTrain:   SQLOSS:%.6f, Mean_absolute_loss:%.6f'
                   '\nTest:   SQLOSS:%.6f, Mean_absolute_loss:%.6f'
-                  % (step, sq_loss_, abs_loss_, loss_t, abs_loss_t))  # 可以顺便把total_loss_也输出，查看总损失
+                  % (step, sq_loss_, abs_loss_, loss_t, abs_loss_t))
             # 现在这样验证就要求一次性把datat全部喂入，如果未来数据量过大不能一次性喂入，
             # 之前应考虑使用tf.metrics.mean_squared_error、tf.metrics.mean_absolute_error这样的评判函数，
             # 然后就可以把datat分多批次喂入，最后统计累计平均误差
