@@ -39,9 +39,8 @@ def get_data():
 
 
 def normal(m):
-    m_no_nan = np.nan_to_num(m)  # 这一句最好放在这里，避免原始数据里存在nan导致col_max和col_min出nan
-    col_max, col_min = m_no_nan.max(axis=0), m_no_nan.min(axis=0)
-    return (m_no_nan - col_min) / (col_max - col_min)
+    col_max, col_min = m.max(axis=0), m.min(axis=0)
+    return np.nan_to_num((m-col_min)/(col_max - col_min))
 
 
 def start_training(datas):
@@ -58,8 +57,8 @@ def start_training(datas):
 
     # Specify the loss function:
     abs_loss = tf.losses.absolute_difference(heat, predictions)  # 常见loss函数建议使用tf.losses
-    sq_loss = tf.losses.mean_squared_error(heat, predictions)
-    total_loss = abs_loss  # 只将abs loss作为损失函数
+    sq_loss = tf.losses.mean_squared_error(heat, predictions, loss_collection=None))  # 不将sq_loss纳入总损失
+    total_loss = tf.losses.get_total_loss()  # 现在的总损失是abs损失+正则损失
 
     # Specify the optimization scheme:
     global_step = tf.train.get_or_create_global_step()  # 建议使用tf.train.get_or_create_global_step建立global step
